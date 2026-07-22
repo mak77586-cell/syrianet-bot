@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import aiohttp
+from aiohttp import web
 from pypdf import PdfReader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -291,6 +292,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await update.message.reply_text("❌ لم يتم العثور على معاملة صحيحة بهذا الرقم أو أن المبلغ غير مطابق.")
 
+# خادم ويب مصغر لمنع انطفاء البوت على Render
+async def handle_web(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app_web = web.Application()
+    app_web.router.add_get("/", handle_web)
+    runner = web.AppRunner(app_web)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
 if __name__ == '__main__':
     init_db()
     TOKEN = "8901147731:AAFvgxlnhB5HI5dtycMxzygvobmu1lvcHCQ"
@@ -302,5 +316,9 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.Document.PDF, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("البوت يعمل الآن مع دعم رفع ملفات الـ PDF وقراءة البطاقات...")
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_web_server())
+    
+    print("البوت يعمل الآن مع خادم الويب ودعم رفع ملفات الـ PDF...")
     app.run_polling()
