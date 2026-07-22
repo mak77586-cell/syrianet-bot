@@ -1,6 +1,7 @@
 import sqlite3
 import logging
 import os
+import re
 import aiohttp
 from pypdf import PdfReader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -55,6 +56,36 @@ def init_db():
     conn.commit()
     conn.close()
 
+def import_cards_from_pdf(pdf_path, target_category):
+    if not os.path.exists(pdf_path):
+        return 0
+    
+    reader = PdfReader(pdf_path)
+    text = ""
+    for page in reader.pages:
+        extracted = page.extract_text()
+        if extracted:
+            text += extracted + "\n"
+            
+    all_numbers = re.findall(r'\b\d{4,8}\b', text)
+    added_count = 0
+    
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    
+    for i in range(0, len(all_numbers) - 1, 2):
+        usr = all_numbers[i]
+        pwd = all_numbers[i+1]
+        
+        cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_category, usr, pwd))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_category, usr, pwd))
+            added_count += 1
+            
+    conn.commit()
+    conn.close()
+    return added_count
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name
@@ -70,8 +101,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_text = (
         f"أهلاً بك يا {user_name} في متجر بطاقات شبكة الإنترنت 🌐\n\n"
-        "يمكنك من خلال هذا البوت شراء بطاقات الإنترنت الخاصة بالشبكة بشكل فوري وتلقائي."
-             "للتوصل مع الدعم @mak77588"
+        "يمكنك من خلال هذا البوت شراء بطاقات الإنترنت الخاصة بالشبكة بشكل فوري وتلقائي.\n"
+        "للتواصل مع الدعم @mak77588"
     )
 
     if update.callback_query:
@@ -102,7 +133,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "admin_panel" and user_id == ADMIN_ID:
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
-        stats_text = "📊 *إحصائيات ومخزون البطاقات:*\n\n"
+        stats_text = "📊 إحصائيات ومخزون البطاقات:\n\n"
         for cat in CATEGORY_PRICES.keys():
             cursor.execute("SELECT COUNT(*) FROM cards WHERE category = ? AND is_sold = 0", (cat,))
             available = cursor.fetchone()[0]
@@ -112,33 +143,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         keyboard = [
-            [InlineKeyboardButton("➕ إضافة بطاقات (أرسل ملف PDF واختار الفئة)", callback_data="admin_upload_help")],
+            [InlineKeyboardButton("📥 رفع PDF لفئة 5G", callback_data="set_pdf_5G"), InlineKeyboardButton("📥 رفع PDF لفئة 10G", callback_data="set_pdf_10G")],
+            [InlineKeyboardButton("📥 رفع PDF لفئة 20G", callback_data="set_pdf_20G"), InlineKeyboardButton("📥 رفع PDF لفئة 30G", callback_data="set_pdf_30G")],
+            [InlineKeyboardButton("📥 رفع PDF لفئة 50G", callback_data="set_pdf_50G"), InlineKeyboardButton("📥 رفع PDF لفئة 100G", callback_data="set_pdf_100G")],
             [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            text=stats_text + "\n💡 *لإضافة بطاقات:* اختر الفئة أولاً من الأزرار أدناه أو أرسل ملف PDF ثم حدد الفئة.",
+            text=stats_text + "\n💡 لإضافة بطاقات: اختر الفئة من الأزرار أدناه ثم أرسل ملف الـ PDF الخاص بها.",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
-        
-    elif query.data == "admin_upload_help" and user_id == ADMIN_ID:
-        keyboard = [
-            [InlineKeyboardButton("📥 رفع لـ 5G", callback_data="up_5G"), InlineKeyboardButton("📥 رفع لـ 10G", callback_data="up_10G")],
-            [InlineKeyboardButton("📥 رفع لـ 20G", callback_data="up_20G"), InlineKeyboardButton("📥 رفع لـ 30G", callback_data="up_30G")],
-            [InlineKeyboardButton("📥 رفع لـ 50G", callback_data="up_50G"), InlineKeyboardButton("📥 رفع لـ 100G", callback_data="up_100G")],
-            [InlineKeyboardButton("🔙 لوحة التحكم", callback_data="admin_panel")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="اختر الفئة التي تريد إضافة ملف الـ PDF إليها:", reply_markup=reply_markup)
 
-    elif query.data.startswith("up_") and user_id == ADMIN_ID:
-        cat_target = query.data.replace("up_", "")
-        context.user_data['waiting_for_pdf_category'] = cat_target
-        keyboard = [[InlineKeyboardButton("🔙 إلغاء", callback_data="admin_panel")]]
+    elif query.data.startswith("set_pdf_") and user_id == ADMIN_ID:
+        cat_target = query.data.replace("set_pdf_", "")
+        context.user_data['target_pdf_category'] = cat_target
+        keyboard = [[InlineKeyboardButton("🔙 لوحة التحكم", callback_data="admin_panel")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            text=f"📂 حسناً، أرسل الآن ملف الـ *PDF* الخاص بفئة *{cat_target}* وسيقوم البوت بقراءته وإضافة البطاقات تلقائياً.",
+            text=f"📤 *تم اختيار فئة: {cat_target}*\n\n"
+                 f"الآن قم بإرسال ملف الـ PDF الخاص بهذه الفئة مباشرة هنا في المحادثة.",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
@@ -157,18 +181,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            text=f"لقد اخترت فئة: *{category_name}*.\n"
-                 f"💰 *المبلغ المطلوب:* {price} ليرة سورية\n\n"
-                 f"💸 *طريقة الدفع عبر شام كاش:*\n"
+            text=f"لقد اخترت فئة: {category_name}.\n"
+                 f"💰 المبلغ المطلوب: {price} ليرة سورية\n\n"
+                 f"💸 طريقة الدفع عبر شام كاش:\n"
                  f"يرجى تحويل المبلغ إلى الحساب التالي:\n`{WALLET_ID}`\n\n"
-                 f"بعد التحويل، *أرسل رقم المعاملة (Transaction ID)* هنا لاستلام البطاقة فورا.",
+                 f"بعد التحويل، أرسل رقم المعاملة (Transaction ID) هنا لاستلام البطاقة فورا.",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
         
     elif query.data == "main_menu":
         context.user_data['waiting_for_tx'] = False
-        context.user_data.pop('waiting_for_pdf_category', None)
+        context.user_data.pop('target_pdf_category', None)
         await start(update, context)
 
 async def verify_shamcash_transaction(tx_id: str, expected_amount: float) -> bool:
@@ -191,72 +215,39 @@ async def verify_shamcash_transaction(tx_id: str, expected_amount: float) -> boo
         logging.error(f"Error connecting to Sham Cash API: {e}")
         return False
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
-    # معالجة رفع ملف الـ PDF من قبل المشرف
-    if user_id == ADMIN_ID and context.user_data.get('waiting_for_pdf_category'):
-        target_cat = context.user_data.get('waiting_for_pdf_category')
-        
-        if update.message.document:
-            file = await update.message.document.get_file()
-            file_path = "temp_cards.pdf"
-            await file.download_to_drive(file_path)
-            
-            added_count = 0
-            try:
-                reader = PdfReader(file_path)
-                full_text = ""
-                for page in reader.pages:
-                    t = page.extract_text()
-                    if t:
-                        full_text += t + "\n"
-                
-                import re
-                # استخراج جميع الأرقام الموجودة في الملف بالترتيب الذي تظهر به
-                # (حيث يفترض أن يأتي اسم المستخدم أولاً ثم كلمة المرور للبطاقة الواحدة)
-                all_numbers = re.findall(r'\b\d+\b', full_text)
-                
-                conn = sqlite3.connect('shop.db')
-                cursor = conn.cursor()
-                added_count = 0
-                
-                # قراءة الأرقام على شكل أزواج: الأول اسم مستخدم والثاني كلمة مرور
-                i = 0
-                while i < len(all_numbers) - 1:
-                    usr = all_numbers[i]
-                    pwd = all_numbers[i+1]
-                    
-                    # نتأكد أن القيمتين ليست متشابهة ولها طول مناسب كبطاقة إنترنت
-                    if len(usr) >= 4 and len(pwd) >= 4 and usr != pwd:
-                        cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, usr, pwd))
-                        if not cursor.fetchone():
-                            cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, usr, pwd))
-                            added_count += 1
-                        i += 2  # الانتقال للبطاقة التالية (زوج جديد)
-                    else:
-                        i += 1  # في حال كان هناك رقم زائد أو نص جانبي، نتحرك خطوة للأمام للبحث عن الزوج الصحيح
-                
-                conn.commit()
-                conn.close()
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    
-                context.user_data.pop('waiting_for_pdf_category', None)
-                await update.message.reply_text(f"✅ تمت إضافة *{added_count}* بطاقة جديدة بنجاح إلى فئة *{target_cat}*!", parse_mode="Markdown")
-            except Exception as e:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                await update.message.reply_text(f"❌ حدث خطأ أثناء قراءة ملف الـ PDF: {e}")
-        else:
-            await update.message.reply_text("⚠️ يرجى إرسال ملف PDF صالح.")
+    if user_id != ADMIN_ID:
         return
+        
+    target_category = context.user_data.get('target_pdf_category')
+    if not target_category:
+        await update.message.reply_text("⚠️ يرجى أولاً الدخول إلى لوحة التحكم واختيار الفئة التي تريد رفع ملف الـ PDF لها.")
+        return
+        
+    doc = update.message.document
+    file = await context.bot.get_file(doc.file_id)
+    
+    pdf_file_path = "temp_upload.pdf"
+    await file.download_to_drive(pdf_file_path)
+    
+    added = import_cards_from_pdf(pdf_file_path, target_category)
+    
+    if os.path.exists(pdf_file_path):
+        os.remove(pdf_file_path)
+        
+    context.user_data['target_pdf_category'] = None
+    await update.message.reply_text(
+        f"✅ تمت إضافة *{added}* بطاقة جديدة بنجاح إلى فئة {target_category}!",
+        parse_mode="Markdown"
+    )
 
-    # معالجة استقبال رقم المعاملة من المستخدم العادي
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get('waiting_for_tx', False):
         return
         
     tx_id = update.message.text.strip()
+    user_id = update.effective_user.id
     category = context.user_data.get('selected_category')
     expected_price = context.user_data.get('selected_price', 0)
     
@@ -268,7 +259,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ عذراً، رقم المعاملة هذا تم استخدامه مسبقاً!")
         return
 
-    await update.message.reply_text(f"⏳ جاري التحقق من رقم المعاملة ({tx_id}) عبر شام كاش...", parse_mode="Markdown")
+    await update.message.reply_text("⏳ جاري التحقق من المعاملة وتسليم البطاقة...")
     
     is_valid_payment = await verify_shamcash_transaction(tx_id, expected_price)
     
@@ -286,7 +277,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['waiting_for_tx'] = False
             
             await update.message.reply_text(
-                f"✅ *تم تأكيد الدفع بنجاح! إليك تفاصيل بطاقتك:*\n\n"
+                f"✅ تم تأكيد الدفع بنجاح! إليك تفاصيل بطاقتك:\n\n"
                 f"📦 الفئة: {category}\n"
                 f"👤 اسم المستخدم: {card_user}\n"
                 f"🔑 كلمة المرور: {card_pass}\n\n"
@@ -298,7 +289,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ عذراً، نفدت بطاقات هذه الفئة حالياً من النظام!")
     else:
         conn.close()
-        await update.message.reply_text("❌ لم يتم العثور على معاملة مطابقة لهذا الرقم في سجلات شام كاش. تأكد من صحة الرقم.")
+        await update.message.reply_text("❌ لم يتم العثور على معاملة صحيحة بهذا الرقم أو أن المبلغ غير مطابق.")
+
 if __name__ == '__main__':
     init_db()
     TOKEN = "8901147731:AAFvgxlnhB5HI5dtycMxzygvobmu1lvcHCQ"
@@ -307,7 +299,8 @@ if __name__ == '__main__':
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.Document.ALL | (filters.TEXT & ~filters.COMMAND), handle_message))
+    app.add_handler(MessageHandler(filters.Document.PDF, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     print("البوت يعمل الآن مع دعم رفع ملفات الـ PDF وقراءة البطاقات...")
     app.run_polling()
