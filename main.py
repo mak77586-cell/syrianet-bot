@@ -71,7 +71,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         f"أهلاً بك يا {user_name} في متجر بطاقات شبكة الإنترنت 🌐\n\n"
         "يمكنك من خلال هذا البوت شراء بطاقات الإنترنت الخاصة بالشبكة بشكل فوري وتلقائي."
-        "للتوصل مع الدعم @mak77588"
+             "للتوصل مع الدعم @mak77588"
     )
 
     if update.callback_query:
@@ -210,32 +210,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for page in reader.pages:
                     text += page.extract_text() + "\n"
                 
-                # تحليل النص المستخرج من ملف الـ PDF واستخراج الحسابات وكلمات المرور
+                # استخراج الأسطر غير الفارغة
                 lines = [line.strip() for line in text.split('\n') if line.strip()]
                 
-                # خوارزمية ذكية للبحث عن أرقام الهواتف أو أسمائهم وكلمات المرور في النص
+                added_count = 0
+                conn = sqlite3.connect('shop.db')
+                cursor = conn.cursor()
+
+                # طريقة مرنة لقراءة البيانات: البحث عن الأرقام التي تبدأ بـ 09 وأخذ الكلمة التي تليها ككلمة مرور
                 i = 0
-                while i < len(lines) - 1:
+                while i < len(lines):
                     line = lines[i]
-                    # البحث عن الأرقام التي تبدأ بـ 09 (اسم المستخدم)
                     if line.startswith("09") and len(line) == 10:
                         usr = line
-                        # البحث عن كلمة المرور في الأسطر القريبة التالية
+                        # البحث في الأسطر القليلة اللاحقة عن كلمة المرور (غالباً تكون أرقاماً أيضاً)
                         for j in range(1, 4):
                             if i + j < len(lines):
-                                potential_pwd = lines[i + j]
-                                if potential_pwd.isdigit() and len(potential_pwd) >= 4:
-                                    pwd = potential_pwd
-                                    conn = sqlite3.connect('shop.db')
-                                    cursor = conn.cursor()
+                                pwd = lines[i + j]
+                                if len(pwd) >= 4 and pwd.isdigit():
+                                    # تحقق من عدم تكرار البطاقة مسبقاً
                                     cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, usr, pwd))
                                     if not cursor.fetchone():
                                         cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, usr, pwd))
                                         added_count += 1
-                                    conn.commit()
-                                    conn.close()
                                     break
                     i += 1
+                
+                conn.commit()
+                conn.close()
                 
                 if os.path.exists(file_path):
                     os.remove(file_path)
