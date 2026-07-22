@@ -208,33 +208,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reader = PdfReader(file_path)
                 text = ""
                 for page in reader.pages:
-                    text += page.extract_text() + "\n"
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
                 
-                # استخراج الأسطر غير الفارغة
-                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                # استخراج كل الكلمات والأرقام من النص
+                import re
+                # البحث عن أرقام الهواتف التي تبدأ بـ 09 ومكونة من 10 أرقام
+                phones = re.findall(r'09\d{8}', text)
                 
-                added_count = 0
+                # البحث عن أرقام كلمات المرور (عادة أرقام مكونة من 4 إلى 6 منازل)
+                # نقوم باستخراج كافة الأرقام المتتالية في النص
+                all_numbers = re.findall(r'\b\d{4,6}\b', text)
+                
                 conn = sqlite3.connect('shop.db')
                 cursor = conn.cursor()
-
-                # طريقة مرنة لقراءة البيانات: البحث عن الأرقام التي تبدأ بـ 09 وأخذ الكلمة التي تليها ككلمة مرور
-                i = 0
-                while i < len(lines):
-                    line = lines[i]
-                    if line.startswith("09") and len(line) == 10:
-                        usr = line
-                        # البحث في الأسطر القليلة اللاحقة عن كلمة المرور (غالباً تكون أرقاماً أيضاً)
-                        for j in range(1, 4):
-                            if i + j < len(lines):
-                                pwd = lines[i + j]
-                                if len(pwd) >= 4 and pwd.isdigit():
-                                    # تحقق من عدم تكرار البطاقة مسبقاً
-                                    cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, usr, pwd))
-                                    if not cursor.fetchone():
-                                        cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, usr, pwd))
-                                        added_count += 1
-                                    break
-                    i += 1
+                
+                # ربط كل رقم هاتف برقمين متتاليين من الأرقام المستخرجة ككلمات مرور (أو عشوائياً)
+                # وبما أن الملف يحوي أزواجاً، سنأخذ الأرقام البحتة التي ليست أرقام هواتف
+                passwords = [num for num in all_numbers if not num.startswith('09') or len(num) != 10]
+                
+                # طريقة مطابقة آمنة: كل رقم هاتف يأخذ أول كلمتي مرور متوفرتين لم يتم استخدامهم بعد
+                idx = 0
+                for phone in phones:
+                    if idx < len(passwords):
+                        pwd = passwords[idx]
+                        idx += 1
+                        
+                        # تحقق من عدم وجود البطاقة مسبقاً
+                        cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, phone, pwd))
+                        if not cursor.fetchone():
+                            cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, phone, pwd))
+                            added_count += 1
                 
                 conn.commit()
                 conn.close()
@@ -299,7 +304,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         conn.close()
         await update.message.reply_text("❌ لم يتم العثور على معاملة مطابقة لهذا الرقم في سجلات شام كاش. تأكد من صحة الرقم.")
-
 if __name__ == '__main__':
     init_db()
     TOKEN = "8901147731:AAFvgxlnhB5HI5dtycMxzygvobmu1lvcHCQ"
