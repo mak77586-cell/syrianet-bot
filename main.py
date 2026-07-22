@@ -212,30 +212,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if page_text:
                         text += page_text + "\n"
                 
-                # استخراج كل الكلمات والأرقام من النص
                 import re
-                # البحث عن أرقام الهواتف التي تبدأ بـ 09 ومكونة من 10 أرقام
+                # البحث عن جميع أرقام الهواتف (اسم المستخدم) التي تبدأ بـ 09
                 phones = re.findall(r'09\d{8}', text)
                 
-                # البحث عن أرقام كلمات المرور (عادة أرقام مكونة من 4 إلى 6 منازل)
-                # نقوم باستخراج كافة الأرقام المتتالية في النص
+                # البحث عن كافة الأرقام الأخرى في النص (والتي تمثل كلمات المرور وأكواد الرصيد)
                 all_numbers = re.findall(r'\b\d{4,6}\b', text)
+                
+                # تصفية الأرقام لتتضمن كلمات المرور فقط (استبعاد أرقام الهواتف)
+                passwords = [num for num in all_numbers if not (num.startswith('09') and len(num) == 10)]
                 
                 conn = sqlite3.connect('shop.db')
                 cursor = conn.cursor()
                 
-                # ربط كل رقم هاتف برقمين متتاليين من الأرقام المستخرجة ككلمات مرور (أو عشوائياً)
-                # وبما أن الملف يحوي أزواجاً، سنأخذ الأرقام البحتة التي ليست أرقام هواتف
-                passwords = [num for num in all_numbers if not num.startswith('09') or len(num) != 10]
-                
-                # طريقة مطابقة آمنة: كل رقم هاتف يأخذ أول كلمتي مرور متوفرتين لم يتم استخدامهم بعد
-                idx = 0
-                for phone in phones:
-                    if idx < len(passwords):
-                        pwd = passwords[idx]
-                        idx += 1
+                added_count = 0
+                # ربط كل رقم هاتف بكلمتي المرور التاليتين له في القائمة المستخرجة
+                for idx, phone in enumerate(phones):
+                    if idx * 2 + 1 < len(passwords):
+                        # عادة كل بطاقة تحوي رقم سرّي أو رمزين مرور، نأخذ الأول أو ندمجهما حسب الحاجة
+                        pwd = passwords[idx * 2] # أو الكلمة المرتبطة بها
                         
-                        # تحقق من عدم وجود البطاقة مسبقاً
+                        # تحقق من عدم تكرار البطاقة مسبقاً في قاعدة البيانات
                         cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, phone, pwd))
                         if not cursor.fetchone():
                             cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, phone, pwd))
@@ -243,7 +240,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 conn.commit()
                 conn.close()
-                
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     
