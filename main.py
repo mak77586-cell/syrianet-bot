@@ -206,37 +206,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             added_count = 0
             try:
                 reader = PdfReader(file_path)
-                text = ""
+                full_text = ""
                 for page in reader.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
+                    t = page.extract_text()
+                    if t:
+                        full_text += t + "\n"
                 
                 import re
-                # البحث عن جميع أرقام الهواتف (اسم المستخدم) التي تبدأ بـ 09
-                phones = re.findall(r'09\d{8}', text)
-                
-                # البحث عن كافة الأرقام الأخرى في النص (والتي تمثل كلمات المرور وأكواد الرصيد)
-                all_numbers = re.findall(r'\b\d{4,6}\b', text)
-                
-                # تصفية الأرقام لتتضمن كلمات المرور فقط (استبعاد أرقام الهواتف)
-                passwords = [num for num in all_numbers if not (num.startswith('09') and len(num) == 10)]
+                # استخراج جميع الأرقام الموجودة في الملف بالترتيب الذي تظهر به
+                # (حيث يفترض أن يأتي اسم المستخدم أولاً ثم كلمة المرور للبطاقة الواحدة)
+                all_numbers = re.findall(r'\b\d+\b', full_text)
                 
                 conn = sqlite3.connect('shop.db')
                 cursor = conn.cursor()
-                
                 added_count = 0
-                # ربط كل رقم هاتف بكلمتي المرور التاليتين له في القائمة المستخرجة
-                for idx, phone in enumerate(phones):
-                    if idx * 2 + 1 < len(passwords):
-                        # عادة كل بطاقة تحوي رقم سرّي أو رمزين مرور، نأخذ الأول أو ندمجهما حسب الحاجة
-                        pwd = passwords[idx * 2] # أو الكلمة المرتبطة بها
-                        
-                        # تحقق من عدم تكرار البطاقة مسبقاً في قاعدة البيانات
-                        cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, phone, pwd))
+                
+                # قراءة الأرقام على شكل أزواج: الأول اسم مستخدم والثاني كلمة مرور
+                i = 0
+                while i < len(all_numbers) - 1:
+                    usr = all_numbers[i]
+                    pwd = all_numbers[i+1]
+                    
+                    # نتأكد أن القيمتين ليست متشابهة ولها طول مناسب كبطاقة إنترنت
+                    if len(usr) >= 4 and len(pwd) >= 4 and usr != pwd:
+                        cursor.execute("SELECT id FROM cards WHERE category = ? AND username = ? AND password = ?", (target_cat, usr, pwd))
                         if not cursor.fetchone():
-                            cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, phone, pwd))
+                            cursor.execute("INSERT INTO cards (category, username, password, is_sold) VALUES (?, ?, ?, 0)", (target_cat, usr, pwd))
                             added_count += 1
+                        i += 2  # الانتقال للبطاقة التالية (زوج جديد)
+                    else:
+                        i += 1  # في حال كان هناك رقم زائد أو نص جانبي، نتحرك خطوة للأمام للبحث عن الزوج الصحيح
                 
                 conn.commit()
                 conn.close()
