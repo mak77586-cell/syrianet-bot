@@ -317,8 +317,25 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     import asyncio
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_web_server())
     
-    print("البوت يعمل الآن مع خادم الويب ودعم رفع ملفات الـ PDF...")
-    app.run_polling()
+    async def main():
+        await start_web_server()
+        print("البوت يعمل الآن مع خادم الويب ودعم رفع ملفات الـ PDF...")
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+        # يبقي التطبيق مستمراً بالعمل
+        stop_event = asyncio.Event()
+        await stop_event.wait()
+
+    if __name__ == '__main__':
+        init_db()
+        TOKEN = "8901147731:AAFvgxlnhB5HI5dtycMxzygvobmu1lvcHCQ"
+        app = ApplicationBuilder().token(TOKEN).build()
+        
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CallbackQueryHandler(button_handler))
+        app.add_handler(MessageHandler(filters.Document.PDF, handle_document))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        asyncio.run(main())
