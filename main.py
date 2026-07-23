@@ -20,19 +20,19 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-WALLET_ID = "107117163cf0a37a101368c97757028e"
+WALLET_ID = "25fdea6d11e9cef055fe64b50d29c5a4"
 SHAMCASH_API_URL = f"https://api-shamcash.com/api/v1/wallets/shamcash/{WALLET_ID}/transactions"
-SHAMCASH_API_TOKEN = "sk_a897445f9f116c1b7df7b421339149459b289288cf90c6c915762f61bd83d1ba"
+SHAMCASH_API_TOKEN = "sk_81e3f9bbc05f7f43a52d65c2848cbd20a77bf2102b2fd4b8bd9d80178257a64a"
 
-ADMIN_ID = 1683289084
+ADMIN_ID = 5429133552
 
 CATEGORY_PRICES = {
     "5G": 70,
-    "10G": 100,
+    "10G": 140,
     "20G": 250,
     "30G": 300,
-    "50G": 500,
-    "100G": 700
+    "50G": 450,
+    "100G": 750
 }
 
 def init_db():
@@ -103,7 +103,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         f"أهلاً بك يا {user_name} في متجر بطاقات شبكة الإنترنت 🌐\n\n"
         "يمكنك من خلال هذا البوت شراء بطاقات الإنترنت الخاصة بالشبكة بشكل فوري وتلقائي.\n"
-        "للتواصل مع الدعم @mak77588"
+        "للتواصل مع الدعم @Alibdawa"
     )
 
     if update.callback_query:
@@ -282,7 +282,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📦 الفئة: {category}\n"
                 f"👤 اسم المستخدم: {card_user}\n"
                 f"🔑 كلمة المرور: {card_pass}\n\n"
-                f"شكراً لاستخدامك متجرنا ❤️",
+                f"شكراً لاستخدامك متجر syria net ❤️",
                 parse_mode="Markdown"
             )
         else:
