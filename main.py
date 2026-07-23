@@ -101,8 +101,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     welcome_text = (
-        f"أهلاً بك يا {user_name} في متجر بطاقات شبكة الإنترنت 🌐\n\n"
+        f"🌐 أهلاً بك في SYRIA NET 🌐 {user_name} في متجر بطاقات شبكة الإنترنت 🌐\n\n"
         "يمكنك من خلال هذا البوت شراء بطاقات الإنترنت الخاصة بالشبكة بشكل فوري وتلقائي.\n"
+        "شكراً لاختياركم SYRIA NET 💙"
         "للتواصل مع الدعم @Alibdawa"
     )
 
@@ -277,6 +278,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             context.user_data['waiting_for_tx'] = False
             
+            # إرسال البطاقة للمشتري
             await update.message.reply_text(
                 f"✅ تم تأكيد الدفع بنجاح! إليك تفاصيل بطاقتك:\n\n"
                 f"📦 الفئة: {category}\n"
@@ -285,6 +287,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"شكراً لاستخدامك متجر syria net ❤️",
                 parse_mode="Markdown"
             )
+
+            # إرسال إشعار فوري للأدمن
+            try:
+                buyer_username = update.effective_user.username
+                buyer_name = update.effective_user.first_name
+                admin_notification = (
+                    f"🔔 *عملية شراء جديدة ناجحة!*\n\n"
+                    f"👤 العميل: {buyer_name} (ID: {user_id})\n"
+                    f"🔗 المعرف: @{buyer_username if buyer_username else 'لا يوجد'}\n"
+                    f"📦 الفئة المشتراة: {category}\n"
+                    f"💳 رقم المعاملة: {tx_id}\n"
+                    f"🔑 البطاقة المسلمة:\n"
+                    f"• المستخدم: {card_user}\n"
+                    f"• الباسورد: {card_pass}"
+                )
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=admin_notification,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logging.error(f"Failed to send admin notification: {e}")
         else:
             conn.close()
             await update.message.reply_text("⚠️ عذراً، نفدت بطاقات هذه الفئة حالياً من النظام!")
